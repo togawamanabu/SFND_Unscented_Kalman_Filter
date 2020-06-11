@@ -1,6 +1,8 @@
 #ifndef UKF_H
 #define UKF_H
 
+#include <iostream>
+
 #include "Eigen/Dense"
 #include "measurement_package.h"
 
@@ -95,6 +97,9 @@ class UKF {
 
   // Sigma point spreading parameter
   double lambda_;
+
+  // Number of sigma points
+  int n_sig_;
 };
 
 #endif  // UKF_H
