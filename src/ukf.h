@@ -100,6 +100,18 @@ class UKF {
 
   // Number of sigma points
   int n_sig_;
+
+  //covariance matrix
+  Eigen::MatrixXd P_aug_;
+
+  //lidar covariance
+  Eigen::MatrixXd R_lidar_;
+
+  //radar covariance
+  Eigen::MatrixXd R_radar_;
+
+  // measurement matrix
+  Eigen::MatrixXd H_;
 };
 
 #endif  // UKF_H

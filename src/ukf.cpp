@@ -21,10 +21,10 @@ UKF::UKF() {
   P_ = MatrixXd(5, 5);
 
   // Process noise standard deviation longitudinal acceleration in m/s^2
-  std_a_ = 1.5;
+  std_a_ = 0.9;
 
   // Process noise standard deviation yaw acceleration in rad/s^2
-  std_yawdd_ = 0.7;
+  std_yawdd_ = 0.8;
   
   /**
    * DO NOT MODIFY measurement noise values below.
@@ -85,6 +85,24 @@ UKF::UKF() {
 
   time_us_ = 0;
 
+  P_aug_ = MatrixXd(n_aug_,n_aug_);
+
+  // Lidar covariance
+  R_lidar_ = MatrixXd(2, 2);
+  R_lidar_ << std_laspx_*std_laspx_, 0,
+        0, std_laspy_*std_laspy_;
+
+  // Radar covariance 
+  R_radar_ = MatrixXd(3,3);
+  R_radar_ <<  std_radr_*std_radr_, 0, 0,
+        0, std_radphi_*std_radphi_, 0,
+        0, 0,std_radrd_*std_radrd_; 
+
+  // measurement matrix
+  H_ = MatrixXd(2, 5);
+  H_ << 1, 0, 0, 0, 0,
+       0, 1, 0, 0, 0;
+
 }
 
 UKF::~UKF() {}
@@ -94,10 +112,10 @@ void UKF::ProcessMeasurement(MeasurementPackage meas_package) {
    * TODO: Complete this function! Make sure you switch between lidar and radar
    * measurements.
    */
-  std::cout << "process measure ment start " << std::endl;
+  // std::cout << "process measure ment start " << std::endl;
 
   if(!is_initialized_) {
-    if (meas_package.sensor_type_ == MeasurementPackage::RADAR) {
+    if (meas_package.sensor_type_ == MeasurementPackage::RADAR && use_radar_) {
       double rho = meas_package.raw_measurements_(0);
       double phi = meas_package.raw_measurements_(1);
       double rhodot = meas_package.raw_measurements_(2);
@@ -107,42 +125,40 @@ void UKF::ProcessMeasurement(MeasurementPackage meas_package) {
       x_ << rho * cos(phi), rho * sin(phi), sqrt(vx * vx + vy * vy), 0, 0;
 
       // state covariance matrix
-      P_ << std_radr_*std_radr_, 0, 0, 0, 0,
-            0, std_radr_*std_radr_, 0, 0, 0,
-            0, 0, 1, 0, 0,
+      P_ << 1, 0, 0, 0, 0,
+            0, 1, 0, 0, 0,
+            0, 0, 100, 0, 0,
             0, 0, 0, std_radphi_*std_radphi_, 0,
             0, 0, 0, 0, std_radphi_*std_radphi_;
     }
-    else if (meas_package.sensor_type_ == MeasurementPackage::LASER) {
+    else if (meas_package.sensor_type_ == MeasurementPackage::LASER && use_laser_) {
       // initialize state.
       double lidar_px = meas_package.raw_measurements_(0);
       double lidar_py = meas_package.raw_measurements_(1);
       x_ << lidar_px, lidar_py, 0, 0, 0;
 
       // state covariance matrix
-      P_ << std_laspx_*std_laspx_, 0, 0, 0, 0,
-            0, std_laspy_*std_laspy_, 0, 0, 0,
-            0, 0, 1, 0, 0,
-            0, 0, 0, 1, 0,
-            0, 0, 0, 0, 1;
+      P_ << 1, 0, 0, 0, 0,
+            0, 1, 0, 0, 0,
+            0, 0, 100, 0, 0,
+            0, 0, 0, 100, 0,
+            0, 0, 0, 0, 100;
     }
 
     time_us_ = meas_package.timestamp_;
-
     is_initialized_ = true;
 
     return;
-
   }
 
   double dt = (meas_package.timestamp_ - time_us_) / 1000000.0;
   time_us_ = meas_package.timestamp_;
   Prediction(dt);
 
-  if (MeasurementPackage::SensorType::LASER == meas_package.sensor_type_) {
+  if (MeasurementPackage::SensorType::LASER == meas_package.sensor_type_ && use_laser_) {
     UpdateLidar(meas_package);
   }
-  else if (MeasurementPackage::SensorType::RADAR == meas_package.sensor_type_) {
+  else if (MeasurementPackage::SensorType::RADAR == meas_package.sensor_type_ && use_radar_) {
     UpdateRadar(meas_package);
   }
 }
@@ -226,17 +242,15 @@ void UKF::Prediction(double dt) {
   }
 
   // predict mean and covariance
-  VectorXd x = VectorXd(n_x_);
-  x.fill(0.0);
+  x_.fill(0.0);
   for (int i = 0; i < n_sig_; ++i) {  
-    x_ += weights_(i) * Xsig_pred_.col(i);
+    x_ = x_ + weights_(i) * Xsig_pred_.col(i);
   }
 
-  MatrixXd p = MatrixXd(n_x_, n_x_);
-  p.fill(0.0);
+  P_.fill(0.0);
   for (int i=0; i < n_sig_; ++i) {
     // state difference
-    VectorXd x_diff = Xsig_pred_.col(i) - x;
+    VectorXd x_diff = Xsig_pred_.col(i) - x_;
     // angle normalization
     if(x_diff(3) > M_PI) 
       x_diff(3) -= 2.*M_PI;
@@ -244,16 +258,13 @@ void UKF::Prediction(double dt) {
     if(x_diff(3) < -M_PI)
       x_diff(3) += 2.*M_PI;
       
-    p = p + weights_(i) * x_diff * x_diff.transpose();
+    P_ = P_ + weights_(i) * x_diff * x_diff.transpose();
   }
-
-  x_ = x;
-  P_ = p;
 
 }
 
 void UKF::UpdateLidar(MeasurementPackage meas_package) {
-  std::cout << "update lidar start" << std::endl;
+  // std::cout << "update lidar start" << std::endl;
   /**
    * TODO: Complete this function! Use lidar data to update the belief 
    * about the object's position. Modify the state vector, x_, and 
@@ -263,20 +274,10 @@ void UKF::UpdateLidar(MeasurementPackage meas_package) {
 
   VectorXd z = meas_package.raw_measurements_;
   int n_z = z.size();
-
-  MatrixXd H = MatrixXd(n_z, n_x_);
-  H << 1, 0, 0, 0, 0,
-       0, 1, 0, 0, 0;
-
-  VectorXd z_pred = H * x_;
+  VectorXd z_pred = H_ * x_;
   VectorXd y = z - z_pred;
-  MatrixXd Ht = H.transpose();
-
-  MatrixXd R = MatrixXd(n_z, n_z);
-  R << std_laspx_ * std_laspx_, 0,
-       0, std_laspy_ * std_laspy_;
-
-  MatrixXd S = H * P_ * Ht + R;
+  MatrixXd Ht = H_.transpose();
+  MatrixXd S = H_ * P_ * Ht + R_lidar_;
   MatrixXd Sinv = S.inverse();
   MatrixXd PHt = P_ * Ht;
   MatrixXd K = PHt * Sinv;
@@ -291,7 +292,7 @@ void UKF::UpdateLidar(MeasurementPackage meas_package) {
   if(x_(3) < -M_PI) 
      x_(3) += 2.*M_PI;
 
-  P_ = (I - K * H) * P_;
+  P_ = (I - K * H_) * P_;
 
   double NIS_lidar = y.transpose() * Sinv * y;
   std::cout << "Lidar NIS : " << NIS_lidar << std::endl;
@@ -299,7 +300,7 @@ void UKF::UpdateLidar(MeasurementPackage meas_package) {
 
 void UKF::UpdateRadar(MeasurementPackage meas_package) {
 
-  std::cout << "update radar start" << std::endl;
+  // std::cout << "update radar start" << std::endl;
 
   /**
    * TODO: Complete this function! Use radar data to update the belief 
@@ -348,12 +349,7 @@ void UKF::UpdateRadar(MeasurementPackage meas_package) {
   }
 
   // add measurement noise covariance matrix
-  MatrixXd R = MatrixXd(n_z, n_z);
-  R << std_radr_*std_radr_, 0, 0,
-       0, std_radphi_*std_radphi_, 0,
-       0, 0, std_radrd_*std_radrd_;
-
-  S = S + R;
+  S = S + R_radar_;
 
   //UKF update
   MatrixXd Tc = MatrixXd(n_x_, n_z);
