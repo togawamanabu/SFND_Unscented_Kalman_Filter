@@ -21,10 +21,10 @@ UKF::UKF() {
   P_ = MatrixXd(5, 5);
 
   // Process noise standard deviation longitudinal acceleration in m/s^2
-  std_a_ = 0.9;
+  std_a_ = 1.5;
 
   // Process noise standard deviation yaw acceleration in rad/s^2
-  std_yawdd_ = 0.8;
+  std_yawdd_ = 2.5;
   
   /**
    * DO NOT MODIFY measurement noise values below.
@@ -87,7 +87,7 @@ UKF::UKF() {
 
   P_aug_ = MatrixXd(n_aug_,n_aug_);
 
-  // Lidar covariance
+  // Lidar covarian
   R_lidar_ = MatrixXd(2, 2);
   R_lidar_ << std_laspx_*std_laspx_, 0,
         0, std_laspy_*std_laspy_;
@@ -103,9 +103,14 @@ UKF::UKF() {
   H_ << 1, 0, 0, 0, 0,
        0, 1, 0, 0, 0;
 
+  P_ = MatrixXd::Identity(n_x_, n_x_);
+  P_(3,3) = 0.5;
+  P_(4,4) = 0.5;
+
 }
 
-UKF::~UKF() {}
+UKF::~UKF() {
+}
 
 void UKF::ProcessMeasurement(MeasurementPackage meas_package) {
   /**
@@ -123,26 +128,12 @@ void UKF::ProcessMeasurement(MeasurementPackage meas_package) {
       double vy = rhodot * sin(phi);
       // initialize state.
       x_ << rho * cos(phi), rho * sin(phi), sqrt(vx * vx + vy * vy), 0, 0;
-
-      // state covariance matrix
-      P_ << 1, 0, 0, 0, 0,
-            0, 1, 0, 0, 0,
-            0, 0, 100, 0, 0,
-            0, 0, 0, std_radphi_*std_radphi_, 0,
-            0, 0, 0, 0, std_radphi_*std_radphi_;
     }
     else if (meas_package.sensor_type_ == MeasurementPackage::LASER && use_laser_) {
       // initialize state.
       double lidar_px = meas_package.raw_measurements_(0);
       double lidar_py = meas_package.raw_measurements_(1);
       x_ << lidar_px, lidar_py, 0, 0, 0;
-
-      // state covariance matrix
-      P_ << 1, 0, 0, 0, 0,
-            0, 1, 0, 0, 0,
-            0, 0, 100, 0, 0,
-            0, 0, 0, 100, 0,
-            0, 0, 0, 0, 100;
     }
 
     time_us_ = meas_package.timestamp_;
